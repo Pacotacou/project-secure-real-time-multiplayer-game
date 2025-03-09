@@ -2,7 +2,8 @@ require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
 const expect = require('chai');
-const socket = require('socket.io');
+const helmet = require('helmet');
+
 const cors = require('cors');
 
 const fccTestingRoutes = require('./routes/fcctesting.js');
@@ -10,47 +11,61 @@ const runner = require('./test-runner.js');
 
 const app = express();
 
-app.use('/public', express.static(process.cwd() + '/public'));
-app.use('/assets', express.static(process.cwd() + '/assets'));
+// Security middleware
+app.use(helmet({
+  xPoweredBy: false,
+  noCache: true,
+}));
 
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
-
-//For FCC testing purposes and enables user to connect from outside the hosting platform
-app.use(cors({origin: '*'})); 
-
-// Index page (static HTML)
-app.route('/')
-  .get(function (req, res) {
-    res.sendFile(process.cwd() + '/views/index.html');
-  }); 
-
-//For FCC testing purposes
-fccTestingRoutes(app);
-    
-// 404 Not Found Middleware
-app.use(function(req, res, next) {
-  res.status(404)
-    .type('text')
-    .send('Not Found');
+// Custom headers middleware
+app.use((req, res, next) => {
+  res.setHeader('X-Powered-By', 'PHP 7.4.3');
+  next();
 });
 
-const portNum = process.env.PORT || 3000;
+// Static assets
+app.use('/public', express.static(`${process.cwd()}/public`));
+app.use('/assets', express.static(`${process.cwd()}/assets`));
 
-// Set up server and tests
-const server = app.listen(portNum, () => {
-  console.log(`Listening on port ${portNum}`);
-  if (process.env.NODE_ENV==='test') {
+// Body parsers
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// CORS configuration
+app.use(cors({ origin: '*' }));
+
+// Main route
+app.route('/').get((req, res) => {
+  res.sendFile(`${process.cwd()}/views/index.html`);
+});
+
+// FCC testing routes
+fccTestingRoutes(app);
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).type('text').send('Not Found');
+});
+
+// Server configuration
+const PORT = process.env.PORT || 3000;
+const server = app.listen(PORT, () => {
+  console.log(`Listening on port ${PORT}`);
+  
+  if (process.env.NODE_ENV === 'test') {
     console.log('Running Tests...');
-    setTimeout(function () {
+    setTimeout(() => {
       try {
         runner.run();
       } catch (error) {
-        console.log('Tests are not valid:');
-        console.error(error);
+        console.error('Test validation failed:\n', error);
       }
     }, 1500);
   }
 });
+
+// Initialize WebSocket server
+const socketServer = require('./socketServer.js')
+socketServer(server);
 
 module.exports = app; // For testing
